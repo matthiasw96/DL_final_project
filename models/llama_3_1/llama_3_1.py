@@ -14,7 +14,7 @@ class llama_3_1:
         self.device = "cuda:0"
 
         self.model_name = "meta-llama/Llama-3.1-8B"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name=self.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = self.initialize_model(model_name=self.model_name)
 
         self.k = 5
