@@ -30,7 +30,7 @@ class llama_3_1:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             quantization_config=quantization_config,
-            deveice_map="auto"
+            device_map="auto"
         )
         return model
 

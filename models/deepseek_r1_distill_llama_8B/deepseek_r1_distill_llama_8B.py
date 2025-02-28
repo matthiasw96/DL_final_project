@@ -30,7 +30,7 @@ class deepseek_r1_distill_llama_8B:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             quantization_config=quantization_config,
-            deveice_map="auto"
+            device_map="auto"
         )
         return model
 
