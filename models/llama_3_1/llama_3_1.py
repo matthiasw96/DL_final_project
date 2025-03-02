@@ -45,7 +45,7 @@ class llama_3_1:
 
     def get_answer(self, question, context):
         message = self.create_message(question, context)
-        inputs = self.tokenizer.apply_chat_template(message, return_tensors="pt").to(self.device)
+        inputs = self.tokenizer(message, return_tensors="pt").to(self.device)
         outputs = self.model.generate(inputs)
         answer =  self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         answer = answer[answer.rfind('\n'):]
