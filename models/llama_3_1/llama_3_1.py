@@ -4,20 +4,18 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from huggingface_hub import login
 import torch
 
-
-
 class llama_3_1:
-    def __init__(self, database_path):
+    def __init__(self, params):
         login()
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
-        self.database = FAISS.load_local(database_path, self.embedding_model, allow_dangerous_deserialization=True)
+        self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
         self.device = "cuda:0"
 
         self.model_name = "meta-llama/Llama-3.1-8B"
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = self.initialize_model(model_name=self.model_name)
 
-        self.k = 5
+        self.k = params[0]
 
     def initialize_model(self, model_name):
         quantization_config = BitsAndBytesConfig(
@@ -46,28 +44,18 @@ class llama_3_1:
         return context
 
     def get_answer(self, question, context):
-        messages = self.create_messages(question, context)
-        inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
+        message = self.create_message(question, context)
+        inputs = self.tokenizer.apply_chat_template(message, return_tensors="pt").to(self.device)
         outputs = self.model.generate(inputs)
         answer =  self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         answer = answer[answer.rfind('\n'):]
         return answer
 
-    def create_messages(self, question, contexts):
-        question_add = [" To answer the question extract the information from these texts:",
+    def create_message(self, question, contexts):
+        question_add = ["You are a chatbot who always responds as shortly as possible.\n\n",
+                        "\n\nTo answer the question extract the information from these texts:\n\n",
                         "\nAnswer as shortly as possible, no additional information, no punctiation. "]
-        instruction = "You are a chatbot who always responds as shortly as possible."
 
-        messages = [
-            {
-                "role": "system",
-                "content": instruction,
-            },
-            {"role": "user", "content": question
-                                        + question_add[0]
-                                        + contexts
-                                        + question_add[1]
-             },
-        ]
+        message = question_add[0] + question + question_add[1] + contexts + question_add[2]
 
-        return messages
+        return message
