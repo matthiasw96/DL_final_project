@@ -48,11 +48,14 @@ class llama_3_1:
     def get_answer(self, question, context):
         messages = self.create_messages(question, context)
         inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
-        return self.model.generate(inputs)
+        outputs = self.model.generate(inputs)
+        answer =  self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        answer = answer[answer.rfind('\n'):]
+        return answer
 
     def create_messages(self, question, contexts):
-        question_add = (" Answer in one or two words, no additional information, no punctiation. "
-                        "Use the following text to find the answer:")
+        question_add = [" To answer the question extract the information from these texts:",
+                        "\nAnswer as shortly as possible, no additional information, no punctiation. "]
         instruction = "You are a chatbot who always responds as shortly as possible."
 
         messages = [
@@ -60,7 +63,11 @@ class llama_3_1:
                 "role": "system",
                 "content": instruction,
             },
-            {"role": "user", "content": question + question_add + contexts},
+            {"role": "user", "content": question
+                                        + question_add[0]
+                                        + contexts
+                                        + question_add[1]
+             },
         ]
 
         return messages

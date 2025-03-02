@@ -54,8 +54,8 @@ class deepseek_r1_distill_llama_8B:
         return answer
 
     def create_messages(self, question, contexts):
-        question_add = [" To answer the question use the following text to find the answer:",
-                        "\nAnswer in one or two words, no additional information, no punctiation. "]
+        question_add = [" To answer the question extract the information from these texts:",
+                        "\nAnswer as shortly as possible, no additional information, no punctiation. "]
         instruction = "You are a chatbot who always responds as shortly as possible."
 
         messages = [
