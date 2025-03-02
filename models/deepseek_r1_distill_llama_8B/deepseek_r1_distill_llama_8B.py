@@ -50,7 +50,7 @@ class deepseek_r1_distill_llama_8B:
         inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
         outputs = self.model.generate(inputs)
         answer =  self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        answer = answer[answer.rfind['\n']:]
+        answer = answer[answer.rfind('\n'):]
         return answer
 
     def create_messages(self, question, contexts):
