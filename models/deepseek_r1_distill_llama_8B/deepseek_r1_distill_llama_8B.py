@@ -7,17 +7,17 @@ import torch
 
 
 class deepseek_r1_distill_llama_8B:
-    def __init__(self, database_path):
+    def __init__(self, params):
         login()
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
-        self.database = FAISS.load_local(database_path, self.embedding_model, allow_dangerous_deserialization=True)
+        self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
         self.device = "cuda:0"
 
         self.model_name = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = self.initialize_model(model_name=self.model_name)
 
-        self.k = 5
+        self.k = params[0]
 
     def initialize_model(self, model_name):
         quantization_config = BitsAndBytesConfig(
@@ -48,11 +48,14 @@ class deepseek_r1_distill_llama_8B:
     def get_answer(self, question, context):
         messages = self.create_messages(question, context)
         inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
-        return self.model.generate(inputs)
+        outputs = self.model.generate(inputs)
+        answer =  self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        answer = answer[answer.rfind['\n']:]
+        return answer
 
     def create_messages(self, question, contexts):
-        question_add = (" Answer in one or two words, no additional information, no punctiation. "
-                        "Use the following text to find the answer:")
+        question_add = [" To answer the question use the following text to find the answer:",
+                        "\nAnswer in one or two words, no additional information, no punctiation. "]
         instruction = "You are a chatbot who always responds as shortly as possible."
 
         messages = [
@@ -60,7 +63,11 @@ class deepseek_r1_distill_llama_8B:
                 "role": "system",
                 "content": instruction,
             },
-            {"role": "user", "content": question + question_add + contexts},
+            {"role": "user", "content": question
+                                        + question_add[0]
+                                        + contexts
+                                        + question_add[1]
+             },
         ]
 
         return messages
