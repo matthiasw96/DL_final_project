@@ -46,7 +46,7 @@ class llama_3_1:
     def get_answer(self, question, context):
         message = self.create_message(question, context)
         raw_output = self.generate_answer(message)
-        answer = self.extract_answer(raw_output)
+        answer = raw_output.split("assistant\n")[1].strip()
         return answer
 
     def create_message(self, question, contexts):
@@ -68,8 +68,3 @@ class llama_3_1:
         outputs = self.model.generate(**inputs)
         raw_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True, clean_up_tokenization_spaces=True)
         return raw_output
-
-    def extract_answer(self, raw_output):
-      answer_start = raw_output.split("assistant\n")[1].strip()
-      answer = answer_start[:answer_start.index("\n")]
-      return answer
