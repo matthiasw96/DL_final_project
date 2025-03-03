@@ -50,18 +50,20 @@ class llama_3_1:
         return answer
 
     def create_message(self, question, contexts):
-        #question_add = ["You are a chatbot who always responds as shortly as possible.\n\n",
-        #                "\n\nTo answer the question extract the information from these texts:\n\n",
-        #                "\nAnswer as shortly as possible, no additional information, no punctiation. "]
+        message = f"""<|begin_of_text|>
+          <|start_header_id|>system<|end_header_id|>
+          You are an AI assistant. Use the following context to answer the question.
 
-        #message = question_add[0] + question + question_add[1] + contexts + question_add[2]
+          <|start_header_id|>user<|end_header_id|>
+          Question: {question}
 
-        message = question + "\nUse this text to answer the question:\n" + contexts
+          Context: {contexts}
 
+          <|start_header_id|>assistant<|end_header_id|>"""
         return message
 
     def generate_answer(self, message):
         inputs = self.tokenizer(message, return_tensors="pt").to(self.device)
         outputs = self.model.generate(**inputs)
-        answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True, clean_up_tokenization_spaces=True)
         return answer
