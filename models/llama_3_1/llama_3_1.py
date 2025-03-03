@@ -3,6 +3,7 @@ from langchain_community.vectorstores import FAISS
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from huggingface_hub import login
 import torch
+import re
 
 class llama_3_1:
     def __init__(self, params):
@@ -46,7 +47,7 @@ class llama_3_1:
     def get_answer(self, question, context):
         message = self.create_message(question, context)
         answer = self.generate_answer(message)
-        #answer = answer[answer.rfind('\n'):]
+        answer = answer[answer.rfind('assistant\n'):]
         return answer
 
     def create_message(self, question, contexts):
@@ -65,5 +66,12 @@ class llama_3_1:
     def generate_answer(self, message):
         inputs = self.tokenizer(message, return_tensors="pt").to(self.device)
         outputs = self.model.generate(**inputs)
-        answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        raw_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True, clean_up_tokenization_spaces=True)
+
+        match = re.search(r"assistant\s+(.*)", raw_output, re.DOTALL)
+        if match:
+            answer = match.group(1).strip()
+        else:
+            answer = raw_output.strip()  # Fallback if regex fails
+
         return answer
