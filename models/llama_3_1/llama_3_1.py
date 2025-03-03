@@ -47,7 +47,7 @@ class llama_3_1:
     def get_answer(self, question, context):
         message = self.create_message(question, context)
         answer = self.generate_answer(message)
-        answer = answer[answer.rfind('assistant\n'):]
+        #answer = answer[answer.rfind('assistant\n'):]
         return answer
 
     def create_message(self, question, contexts):
@@ -68,9 +68,10 @@ class llama_3_1:
         outputs = self.model.generate(**inputs)
         raw_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True, clean_up_tokenization_spaces=True)
 
-        match = re.search(r"assistant\s+(.*)", raw_output, re.DOTALL)
+        match = re.search(r"assistant\n+[^\n]*\n?", raw_output, re.DOTALL)
         if match:
             answer = match.group(1).strip()
+            print("match")
         else:
             answer = raw_output.strip()  # Fallback if regex fails
 
