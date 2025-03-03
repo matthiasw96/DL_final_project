@@ -1,5 +1,6 @@
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from huggingface_hub import login
 import torch
@@ -8,7 +9,6 @@ import torch
 
 class deepseek_r1_distill_llama_8B:
     def __init__(self, params):
-        login()
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
         self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
         self.device = "cuda:0"
@@ -17,7 +17,11 @@ class deepseek_r1_distill_llama_8B:
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = self.initialize_model(model_name=self.model_name)
 
-        self.k = params[0]
+        self.text_splitter = self.create_text_splitter()
+
+        self.chunk_size = params["chunk_size"]
+        self.k_articles = params["k_articles"]
+        self.k_chunks = params["k_chunks"]
 
     def initialize_model(self, model_name):
         quantization_config = BitsAndBytesConfig(
@@ -34,16 +38,50 @@ class deepseek_r1_distill_llama_8B:
         )
         return model
 
+    def create_text_splitter(self):
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.chunk_size,
+            chunk_overlap=0,
+            length_function=len,
+        )
+        return text_splitter
+
     def invoke(self, question):
         context = self.get_context(question)
         return self.get_answer(question, context)
 
     def get_context(self, question):
-        documents = self.database.similarity_search(question, self.k)
+        articles = self.database.similarity_search(question, self.k_articles)
+        chunks = self.split_articles(articles)
+        documents = self.filter_chunks(chunks)
         context = ""
         for doc in documents:
             context = context + doc.page_content + "\n"
         return context
+
+    def split_articles(self, articles):
+        chunks = []
+        doc_chunks = []
+        last_chunk = ""
+
+        for article in articles:
+            article_chunks = self.text_splitter.split_text(article)
+            chunks.extend(article_chunks)
+
+        for chunk in chunks:
+            if len(chunk) < self.chunk_size / 3:
+                last_chunk += chunk
+            else:
+                doc_chunks.append(last_chunk)
+                last_chunk = chunk
+        doc_chunks.append(last_chunk)
+
+        return doc_chunks
+
+    def filter_chunks(self, chunks):
+        lib = FAISS.from_texts(chunks, embedding_model=self.embedding_model)
+        top_chunks = lib.similarity_search(chunks, self.k_chunks)
+        return top_chunks
 
     def get_answer(self, question, context):
         messages = self.create_messages(question, context)
@@ -55,7 +93,7 @@ class deepseek_r1_distill_llama_8B:
 
     def create_messages(self, question, contexts):
         question_add = [" To answer the question extract the information from these texts:",
-                        "\nAnswer as shortly as possible, no additional information, no punctiation. "]
+                        "\nAnswer as shortly as possible, no additional information, no punctuation. "]
         instruction = "You are a chatbot who always responds as shortly as possible."
 
         messages = [

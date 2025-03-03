@@ -6,7 +6,6 @@ import torch
 
 class deepseek_r1_chain_of_thoughts:
     def __init__(self, params):
-        login()
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
         self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
         self.device = "cuda:0"
