@@ -3,7 +3,6 @@ from langchain_community.vectorstores import FAISS
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from huggingface_hub import login
 import torch
-import re
 
 class llama_3_1:
     def __init__(self, params):
@@ -46,14 +45,15 @@ class llama_3_1:
 
     def get_answer(self, question, context):
         message = self.create_message(question, context)
-        answer = self.generate_answer(message)
-        #answer = answer[answer.rfind('assistant\n'):]
+        raw_output = self.generate_answer(message)
+        answer = self.extract_answer(raw_output)
         return answer
 
     def create_message(self, question, contexts):
         message = f"""<|begin_of_text|>
           <|start_header_id|>system<|end_header_id|>
-          You are an AI assistant. Use the following context to answer the question.
+          You are an AI assistant that always answers as quickly as possible. 
+          Use the following context to answer the question.
 
           <|start_header_id|>user<|end_header_id|>
           Question: {question}
@@ -67,12 +67,9 @@ class llama_3_1:
         inputs = self.tokenizer(message, return_tensors="pt").to(self.device)
         outputs = self.model.generate(**inputs)
         raw_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        return raw_output
 
-        match = re.search(r"assistant\n+[^\n]*\n?", raw_output, re.DOTALL)
-        if match:
-            answer = match.group(1).strip()
-            print("match")
-        else:
-            answer = raw_output.strip()  # Fallback if regex fails
-
-        return answer
+    def extract_answer(self, raw_output):
+      answer_start = raw_output.split("assistant\n")[1].strip()
+      answer = answer_start[:answer_start.index("\n")]
+      return answer
