@@ -1,11 +1,15 @@
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from huggingface_hub import login
 import torch
 
 class deepseek_r1_chain_of_thoughts:
     def __init__(self, params):
+        self.chunk_size = params["chunk_size"]
+        self.k_articles = params["k_articles"]
+        self.k_chunks = params["k_chunks"]
+
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
         self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
         self.device = "cuda:0"
@@ -14,7 +18,7 @@ class deepseek_r1_chain_of_thoughts:
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = self.initialize_model(model_name=self.model_name)
 
-        self.k = params[0]
+        self.text_splitter = self.create_text_splitter()
 
     def initialize_model(self, model_name):
         quantization_config = BitsAndBytesConfig(
@@ -31,40 +35,98 @@ class deepseek_r1_chain_of_thoughts:
         )
         return model
 
+    def create_text_splitter(self):
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.chunk_size,
+            chunk_overlap=0,
+            length_function=len,
+        )
+        return text_splitter
+
     def invoke(self, question):
         context = self.get_context(question)
         return self.get_answer(question, context)
 
     def get_context(self, question):
-        documents = self.database.similarity_search(question, self.k)
+        articles = self.database.similarity_search(question, self.k_articles)
+        chunks = self.split_articles(articles)
+        documents = self.filter_chunks(chunks, question)
         context = ""
         for doc in documents:
-            context = context + doc.page_content + "\n"
+            context = context + doc.page_content + "\n\n"
         return context
+
+    def split_articles(self, articles):
+        chunks = []
+        doc_chunks = []
+        last_chunk = ""
+
+        for article in articles:
+            article_chunks = self.text_splitter.split_text(article.page_content)
+            chunks.extend(article_chunks)
+
+        for chunk in chunks:
+            if len(chunk) < self.chunk_size / 3:
+                last_chunk += chunk
+            else:
+                doc_chunks.append(last_chunk)
+                last_chunk = chunk
+        doc_chunks.append(last_chunk)
+
+        return doc_chunks
+
+    def filter_chunks(self, chunks, question):
+        lib = FAISS.from_texts(chunks, self.embedding_model)
+        top_chunks = lib.similarity_search(question, self.k_chunks)
+        return top_chunks
 
     def get_answer(self, question, context):
         messages = self.create_messages(question, context)
-        inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
-        outputs = self.model.generate(inputs)
-        answer =  self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        answer = answer[answer.rfind('\n'):]
+        raw_output = self.generate_answer(messages)
+        answer = self.extract_answer(raw_output)
         return answer
 
     def create_messages(self, question, contexts):
-        question_add = [" To answer the question extract the information from these texts:",
-                        "\nAnswer as shortly as possible, no additional information, no punctiation. "]
-        instruction = "You are a chatbot who always responds as shortly as possible."
+        instruction = """
+        You are an AI assistant that solves problems step by step using the provided context. For every question, follow these steps:
+        1. Analyze the question carefully.
+        2. Refer to the provided context to find relevant information.
+        3. Break down the problem into smaller steps based on the context.
+        4. Solve each step logically using the context.
+        5. Combine the results to reach the final answer.
+        6. Write the final answer on the last line in the format: "Final Answer: [answer]".
+
+        Here is an example:
+
+        Context: France is a country in Europe. Its capital is Paris.
+        Question: What is the capital of France?
+        1. The question asks for the capital of France.
+        2. The context states that France is a country in Europe and its capital is Paris.
+        3. Therefore, the capital of France is Paris.
+        Final Answer: Paris
+
+        Now answer the following question using the provided context.
+        """
 
         messages = [
-            {
-                "role": "system",
-                "content": instruction,
-            },
-            {"role": "user", "content": question
-                                        + question_add[0]
-                                        + contexts
-                                        + question_add[1]
-             },
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": f"Context: {contexts}\n\nQuestion: {question}"}
         ]
-
         return messages
+
+    def generate_answer(self, messages):
+        inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
+        outputs = self.model.generate(
+            inputs,
+            max_new_tokens=800,  # Increase token limit for CoT reasoning
+            temperature=0.3,  # Slightly higher temperature for creativity in reasoning
+            top_p=0.9,  # Allow some diversity in reasoning steps
+            do_sample=True,  # Enable sampling for varied reasoning
+            eos_token_id=self.tokenizer.eos_token_id
+        )
+        answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return answer
+
+    def extract_answer(self, raw_output):
+        answer = raw_output.split("Final Answer: ")[-1]
+        return answer

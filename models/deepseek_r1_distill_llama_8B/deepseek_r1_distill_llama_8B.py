@@ -2,13 +2,14 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from huggingface_hub import login
 import torch
-
-
 
 class deepseek_r1_distill_llama_8B:
     def __init__(self, params):
+        self.chunk_size = params["chunk_size"]
+        self.k_articles = params["k_articles"]
+        self.k_chunks = params["k_chunks"]
+
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
         self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
         self.device = "cuda:0"
@@ -18,10 +19,6 @@ class deepseek_r1_distill_llama_8B:
         self.model = self.initialize_model(model_name=self.model_name)
 
         self.text_splitter = self.create_text_splitter()
-
-        self.chunk_size = params["chunk_size"]
-        self.k_articles = params["k_articles"]
-        self.k_chunks = params["k_chunks"]
 
     def initialize_model(self, model_name):
         quantization_config = BitsAndBytesConfig(
@@ -53,10 +50,10 @@ class deepseek_r1_distill_llama_8B:
     def get_context(self, question):
         articles = self.database.similarity_search(question, self.k_articles)
         chunks = self.split_articles(articles)
-        documents = self.filter_chunks(chunks)
+        documents = self.filter_chunks(chunks, question)
         context = ""
         for doc in documents:
-            context = context + doc.page_content + "\n"
+            context = context + doc.page_content + "\n\n"
         return context
 
     def split_articles(self, articles):
@@ -65,7 +62,7 @@ class deepseek_r1_distill_llama_8B:
         last_chunk = ""
 
         for article in articles:
-            article_chunks = self.text_splitter.split_text(article)
+            article_chunks = self.text_splitter.split_text(article.page_content)
             chunks.extend(article_chunks)
 
         for chunk in chunks:
@@ -78,34 +75,47 @@ class deepseek_r1_distill_llama_8B:
 
         return doc_chunks
 
-    def filter_chunks(self, chunks):
-        lib = FAISS.from_texts(chunks, embedding_model=self.embedding_model)
-        top_chunks = lib.similarity_search(chunks, self.k_chunks)
+    def filter_chunks(self, chunks, question):
+        lib = FAISS.from_texts(chunks, self.embedding_model)
+        top_chunks = lib.similarity_search(question, self.k_chunks)
         return top_chunks
 
     def get_answer(self, question, context):
         messages = self.create_messages(question, context)
-        inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
-        outputs = self.model.generate(inputs)
-        answer =  self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        answer = answer[answer.rfind('\n'):]
+        raw_output = self.generate_answer(messages)
+        answer = self.extract_answer(raw_output)
         return answer
 
     def create_messages(self, question, contexts):
-        question_add = [" To answer the question extract the information from these texts:",
-                        "\nAnswer as shortly as possible, no additional information, no punctuation. "]
-        instruction = "You are a chatbot who always responds as shortly as possible."
+        instruction = """Answer the question in one sentence or less. Do not explain or elaborate. Only provide the direct answer. Mark your answer with the word "Answer:".
 
+        Here is an example:
+
+        Context: France is a country in Europe. Its capital is Paris.
+        Question: What is the capital of France?
+        Answer: Paris
+
+        Now answer the following question using the provided context.
+        """
         messages = [
-            {
-                "role": "system",
-                "content": instruction,
-            },
-            {"role": "user", "content": question
-                                        + question_add[0]
-                                        + contexts
-                                        + question_add[1]
-             },
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": f"Context: {contexts}\n\nQuestion: {question}"}
         ]
-
         return messages
+
+    def generate_answer(self, messages):
+        inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
+        outputs = self.model.generate(
+            inputs,
+            max_new_tokens=600,
+            temperature=0.1,
+            top_p=0.2,
+            do_sample=False,
+            eos_token_id=self.tokenizer.eos_token_id
+        )
+        answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return answer
+
+    def extract_answer(self, raw_output):
+        answer = raw_output.split("Answer: ")[-1]
+        return answer
