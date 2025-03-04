@@ -2,13 +2,19 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import AgglomerativeClustering
+from collections import defaultdict
 import torch
 
-class deepseek_r1_chain_of_thoughts:
+
+class deepseek_r1_self_consistency:
     def __init__(self, params):
         self.chunk_size = int(params[0])
         self.k_articles = int(params[1])
         self.k_chunks = int(params[2])
+        self.m = int(params[3])
 
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
         self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
@@ -81,12 +87,54 @@ class deepseek_r1_chain_of_thoughts:
         return top_chunks
 
     def get_answer(self, question, context):
-        messages = self.create_messages(question, context)
-        raw_output = self.generate_answer(messages)
-        answer = self.extract_answer(raw_output)
+        message = self.create_message(question, context)
+        samples = self.sample_answers(message)
+        answer = self.select_answer(samples)
         return answer
 
-    def create_messages(self, question, contexts):
+    def sample_answers(self, message):
+        samples = []
+        for _ in range(self.m):
+            r = self.generate_answer(message)
+            a = self.extract_answer(r)
+            samples.append(a)
+        return samples
+
+    def select_answer(self, samples):
+        answer_embeddings, cluster_groups, cluster_labels = self.cluster_answers(samples)
+        answer = self.majority_vote(answer_embeddings, cluster_groups, cluster_labels)
+        return samples[answer]
+
+    def cluster_answers(self, samples):
+        answer_embeddings = self.embedding_model.embed_documents(samples)
+        answer_embeddings = np.array(answer_embeddings)
+
+        distance_matrix = 1 - cosine_similarity(answer_embeddings)
+
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            distance_threshold=0.3,
+            metric='precomputed',
+            linkage='average')
+
+        cluster_labels = clustering.fit_predict(distance_matrix)
+        cluster_groups = defaultdict(list)
+        for idx, label in enumerate(cluster_labels):
+            cluster_groups[label].append(samples[idx])
+        return answer_embeddings, cluster_groups, cluster_labels
+
+    def majority_vote(self, answer_embeddings, cluster_groups, cluster_labels):
+        majority_label = max(cluster_groups, key=lambda k: len(cluster_groups[k]))
+        majority_indices = [idx for idx, lbl in enumerate(cluster_labels) if lbl == majority_label]
+
+        majority_embeddings = answer_embeddings[majority_indices]
+        centroid = np.mean(majority_embeddings, axis=0)
+        similarities = cosine_similarity([centroid], majority_embeddings)[0]
+        most_representative_idx = np.argmax(similarities)
+
+        return majority_indices[most_representative_idx]
+
+    def create_message(self, question, contexts):
         instruction = """
         You are an AI assistant that solves problems step by step using the provided context. For every question, follow these steps:
         1. Analyze the question carefully.
@@ -119,8 +167,8 @@ class deepseek_r1_chain_of_thoughts:
         outputs = self.model.generate(
             inputs,
             max_new_tokens=800,  # Increase token limit for CoT reasoning
-            temperature=0.3,  # Slightly higher temperature for creativity in reasoning
-            top_p=0.9,  # Allow some diversity in reasoning steps
+            temperature=0.9,  # High temperature to explore different reasoning paths
+            top_p=0.9,  # High diversity to produce various outputs
             do_sample=True,  # Enable sampling for varied reasoning
             eos_token_id=self.tokenizer.eos_token_id
         )
