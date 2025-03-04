@@ -6,9 +6,9 @@ import torch
 
 class deepseek_r1_chain_of_thoughts:
     def __init__(self, params):
-        self.chunk_size = params[0]
-        self.k_articles = params[1]
-        self.k_chunks = params[2]
+        self.chunk_size = int(params[0])
+        self.k_articles = int(params[1])
+        self.k_chunks = int(params[2])
 
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
         self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
