@@ -118,6 +118,6 @@ class deepseek_r1_distill_llama_8B:
 
     def extract_answer(self, raw_output):
         answer = raw_output.split("Answer:")[-1]
-        if " " in answer:
-            answer = answer.replace(" ", "").strip()
+        if answer.startswith(" "):
+            answer = answer.replace(" ", "", 1).strip()
         return answer
