@@ -117,7 +117,7 @@ class deepseek_r1_distill_llama_8B:
         return answer
 
     def extract_answer(self, raw_output):
-        answer = raw_output.split("Final Answer:")[-1]
+        answer = raw_output.split("Answer:")[-1]
         if " " in answer:
             answer = answer.replace(" ", "").strip()
         return answer
