@@ -83,7 +83,8 @@ if __name__ == "__main__":
         split_size = 7993
 
     model_name = args.model_name
-    model_params = args.model_params
+
+    model_params = json.loads(args.model_params)
 
     model_path = f"{model_name}.{model_name}"
 
