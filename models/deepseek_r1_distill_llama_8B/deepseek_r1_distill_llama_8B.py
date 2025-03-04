@@ -6,9 +6,9 @@ import torch
 
 class deepseek_r1_distill_llama_8B:
     def __init__(self, params):
-        self.chunk_size = params["chunk_size"]
-        self.k_articles = params["k_articles"]
-        self.k_chunks = params["k_chunks"]
+        self.chunk_size = params[0]
+        self.k_articles = params[1]
+        self.k_chunks = params[2]
 
         self.embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
         self.database = FAISS.load_local("database", self.embedding_model, allow_dangerous_deserialization=True)
