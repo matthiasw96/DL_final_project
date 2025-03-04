@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
     model_name = args.model_name
 
-    model_params = json.loads(args.model_params)
+    model_params = args.model_params
 
     model_path = f"{model_name}.{model_name}"
 
