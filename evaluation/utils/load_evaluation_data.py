@@ -1,5 +1,5 @@
 from datasets import load_dataset
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 import json
 import argparse
 
