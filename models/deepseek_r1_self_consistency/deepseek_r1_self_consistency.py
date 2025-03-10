@@ -134,12 +134,12 @@ class deepseek_r1_self_consistency:
 
         return majority_indices[most_representative_idx]
 
-    def create_messages(self, question, contexts):
+    def create_message(self, question, contexts):
         constraints = """
                      ONLY USE A MAXIMUM OF 4 REASONING STEPS! 
                      ONLY WRITE ONE SENTENCE PER REASONING STEP! 
                      MARK YOUR FINAL ANSWER WITH "Final Answer: "! 
-                     YOUR FINAL SHOULD BE A SINGLE EXPRESSION, NOT A SENTENCE!"""
+                     YOUR FINAL ANSWER SHOULD BE A SINGLE EXPRESSION, NOT A SENTENCE!"""
 
         examples = """First Example:
          Question: Who directed the movie La Dolce Vita?
@@ -192,4 +192,6 @@ class deepseek_r1_self_consistency:
         answer = raw_output.split("Answer:")[-1]
         if answer.startswith(" "):
             answer = answer.replace(" ", "", 1).strip()
+        elif "." in answer:
+            answer = answer.replace(".","", 1).stript()
         return answer

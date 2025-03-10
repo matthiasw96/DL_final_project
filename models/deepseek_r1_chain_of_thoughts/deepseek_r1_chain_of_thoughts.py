@@ -91,7 +91,7 @@ class deepseek_r1_chain_of_thoughts:
                     ONLY USE A MAXIMUM OF 4 REASONING STEPS! 
                     ONLY WRITE ONE SENTENCE PER REASONING STEP! 
                     MARK YOUR FINAL ANSWER WITH "Final Answer: "! 
-                    YOUR FINAL SHOULD BE A SINGLE EXPRESSION, NOT A SENTENCE!"""
+                    YOUR FINAL ANSWER SHOULD BE A SINGLE EXPRESSION, NOT A SENTENCE!"""
 
         examples = """First Example:
         Question: Who directed the movie La Dolce Vita?

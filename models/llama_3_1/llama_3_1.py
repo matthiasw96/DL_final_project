@@ -124,9 +124,9 @@ class llama_3_1:
         return raw_output
 
     def extract_answer(self, raw_output):
-      answer_start = raw_output.split("assistant\n")[1].strip()
-      if "\n" in answer_start:
-        answer = answer_start[:answer_start.index("\n")]
-      else:
-        answer = answer_start
-      return answer
+        answer = raw_output.split("Answer:")[-1]
+        if answer.startswith(" "):
+            answer = answer.replace(" ", "", 1).strip()
+        elif "." in answer:
+            answer = answer.replace(".","", 1).stript()
+        return answer
