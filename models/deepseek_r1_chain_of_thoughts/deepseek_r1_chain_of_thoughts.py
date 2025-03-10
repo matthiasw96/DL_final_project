@@ -121,7 +121,7 @@ class deepseek_r1_chain_of_thoughts:
             max_new_tokens=800,  # Increase token limit for CoT reasoning
             temperature=0.3,  # Slightly higher temperature for creativity in reasoning
             top_p=0.9,  # Allow some diversity in reasoning steps
-            do_sample=True,  # Enable sampling for varied reasoning
+            do_sample=False,  # Enable sampling for varied reasoning
             eos_token_id=self.tokenizer.eos_token_id
         )
         answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)

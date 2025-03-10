@@ -167,9 +167,9 @@ class deepseek_r1_self_consistency:
         outputs = self.model.generate(
             inputs,
             max_new_tokens=800,  # Increase token limit for CoT reasoning
-            temperature=0.9,  # High temperature to explore different reasoning paths
+            temperature=0.6,  # High temperature to explore different reasoning paths
             top_p=0.9,  # High diversity to produce various outputs
-            do_sample=True,  # Enable sampling for varied reasoning
+            do_sample=False,  # Enable sampling for varied reasoning
             eos_token_id=self.tokenizer.eos_token_id
         )
         answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
