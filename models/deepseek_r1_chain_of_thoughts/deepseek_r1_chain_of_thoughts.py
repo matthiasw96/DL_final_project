@@ -111,16 +111,7 @@ class deepseek_r1_chain_of_thoughts:
             2. The context confirms that "Ain’t No Mountain High Enough" was her first solo No. 1.
             3. No earlier solo No. 1 hits are mentioned.
             4. Since this matches the requirement, it is the correct answer.
-        Final Answer: Ain't No Mountain High Enough.
-
-        Third Example:
-        Question: Tony Lumpkin, Constance Neville, and George Hastings are all characters in which play?
-        Context: She Stoops to Conquer is a play by Oliver Goldsmith that includes Tony Lumpkin, Constance Neville, and George Hastings.
-        Response:
-            1. The question asks for the play featuring these characters.
-            2. The context states that She Stoops to Conquer is a play by Oliver Goldsmith and includes all three characters.
-            3. Since the context directly confirms this, it must be the correct answer.
-        Final Answer: She Stoops to Conquer."""
+        Final Answer: Ain't No Mountain High Enough."""
 
         # Optimized Prompt Template
         messages = [

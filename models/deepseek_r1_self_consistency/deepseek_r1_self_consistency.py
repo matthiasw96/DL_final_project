@@ -134,31 +134,44 @@ class deepseek_r1_self_consistency:
 
         return majority_indices[most_representative_idx]
 
-    def create_message(self, question, contexts):
-        instruction = """
-        You are an AI assistant that solves problems step by step using the provided context. For every question, follow these steps:
-        1. Analyze the question carefully.
-        2. Refer to the provided context to find relevant information.
-        3. Break down the problem into smaller steps based on the context.
-        4. Solve each step logically using the context.
-        5. Combine the results to reach the final answer.
-        6. Write the final answer on the last line in the format: "Final Answer: [answer]".
+    def create_messages(self, question, contexts):
+        constraints = """
+                     ONLY USE A MAXIMUM OF 4 REASONING STEPS! 
+                     ONLY WRITE ONE SENTENCE PER REASONING STEP! 
+                     MARK YOUR FINAL ANSWER WITH "Final Answer: "! 
+                     YOUR FINAL SHOULD BE A SINGLE EXPRESSION, NOT A SENTENCE!"""
 
-        Here is an example:
+        examples = """First Example:
+         Question: Who directed the movie La Dolce Vita?
+         Context: La Dolce Vita is a 1960 Italian film directed by Federico Fellini. The film won the Palme d'Or and remains one of the most influential films in history.
+         Response:
+             1. The question asks for the director of La Dolce Vita.
+             2. The context states that Federico Fellini directed the movie.
+             3. No other director is mentioned.
+             4. Since Fellini is the only mentioned director, he is the correct answer.
+         Final Answer: Federico Fellini
 
-        Context: France is a country in Europe. Its capital is Paris.
-        Question: What is the capital of France?
-        1. The question asks for the capital of France.
-        2. The context states that France is a country in Europe and its capital is Paris.
-        3. Therefore, the capital of France is Paris.
-        Final Answer: Paris
+         Second Example:
+         Question: What was Diana Ross's first solo No. 1?
+         Context: Diana Ross released her debut solo album in 1970, which contained "Ain’t No Mountain High Enough," her first solo No. 1 hit.
+         Response:
+             1. The question asks for Diana Ross's first solo No. 1.
+             2. The context confirms that "Ain’t No Mountain High Enough" was her first solo No. 1.
+             3. No earlier solo No. 1 hits are mentioned.
+             4. Since this matches the requirement, it is the correct answer.
+         Final Answer: Ain't No Mountain High Enough."""
 
-        Now answer the following question using the provided context.
-        """
-
+        # Optimized Prompt Template
         messages = [
-            {"role": "system", "content": instruction},
-            {"role": "user", "content": f"Context: {contexts}\n\nQuestion: {question}"}
+            {"role": "system",
+             "content": "You are an AI assistant that solves problems step by step using the provided context."},
+            {"role": "user",
+             "content": "Answer the question based on the context by pointing out each reasoning step."},
+            {"role": "user", "content": constraints},
+            {"role": "user", "content": f"Here are some examples:\n\n{examples}"},
+            {"role": "user", "content": "Now answer the following question:"},
+            {"role": "user", "content": f"Question: {question}"},
+            {"role": "user", "content": f"Context: {contexts}"}
         ]
         return messages
 
