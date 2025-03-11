@@ -124,7 +124,7 @@ class llama_3_1:
         return raw_output
 
     def extract_answer(self, raw_output):
-        answer = raw_output.split("Answer:")[-1]
+        answer = raw_output.split("Answer: ")[-1]
         if answer.startswith(" "):
             answer = answer.replace(" ", "", 1).strip()
         elif "." in answer:

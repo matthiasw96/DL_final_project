@@ -105,12 +105,17 @@ class deepseek_r1_distill_llama_8B:
 
     def generate_answer(self, messages):
         inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
+
+        attention_mask = inputs.attention_mask if hasattr(inputs, "attention_mask") else None
+
         outputs = self.model.generate(
             inputs,
-            max_new_tokens=600,
-            temperature=0.1,
-            top_p=0.2,
-            do_sample=False,
+            attention_mask=attention_mask,
+            max_new_tokens=800,  # Increase token limit for CoT reasoning
+            temperature=0.3,  # Slightly higher temperature for creativity in reasoning
+            top_p=0.9,  # Allow some diversity in reasoning steps
+            do_sample=True,  # Enable sampling for varied reasoning
+            pad_token_id=self.tokenizer.eos_token_id,
             eos_token_id=self.tokenizer.eos_token_id
         )
         answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
