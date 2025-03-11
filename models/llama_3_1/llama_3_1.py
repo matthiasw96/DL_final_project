@@ -128,5 +128,5 @@ class llama_3_1:
         if answer.startswith(" "):
             answer = answer.replace(" ", "", 1).strip()
         elif "." in answer:
-            answer = answer.replace(".","", 1).stript()
+            answer = answer.replace(".","", 1).strip()
         return answer
