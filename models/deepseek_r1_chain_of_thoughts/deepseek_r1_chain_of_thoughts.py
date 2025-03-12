@@ -171,9 +171,18 @@ class deepseek_r1_chain_of_thoughts:
         return answer
 
     def extract_answer(self, raw_output):
-        answer = raw_output.split("Answer:")[-1]
-        if answer.startswith(" "):
-            answer = answer.replace(" ", "", 1).strip()
-        elif "." in answer:
-            answer = answer.replace(".","", 1).stript()
-        return answer
+        answer = raw_output.split("Answer: ")[-1]
+        last_start = answer.rfind("[START]")  # Find last occurrence of [START]
+
+        if last_start == -1:
+            return "Extraction Failed: No [START] marker found."
+
+        last_end = answer.find("[END]", last_start)  # Find first [END] after last [START]
+
+        if last_end == -1:
+            return "Extraction Failed: No closing [END] found after last [START]."
+
+        # Extract answer
+        answer = answer[last_start + len("[START]"):last_end].strip()
+
+        return answer if answer else "Extraction Failed: Empty answer."
