@@ -88,50 +88,49 @@ class llama_3_1:
 
     def create_message(self, question, contexts):
         message = f"""<|begin_of_text|>
-            <|start_header_id|>system<|end_header_id|>
-            Role: You are an AI assistant that **only answers based on the provided context**. 
-            If the answer is not in the context, say "Not in context".
+<|start_header_id|>system<|end_header_id|>
+Role: You are an AI assistant that **answers based on the provided context**.
+If the answer is not in the context answer based on prior knowledge, but still in one expression.
 
-            <|start_header_id|>user<|end_header_id|>
-            Task: Answer the question based on the context using **only one expression**.  
-            **If the answer is not in the context, reply "Not in context"**.  
-            Do NOT answer based on prior knowledge.  
+<|start_header_id|>user<|end_header_id|>
+Task: Answer the question based on the context using **only one expression**.
+**If the answer is not in the context answer based on prior knowledge, but still in one expression.**
+**Surround the answer with [START] and [END] to clearly mark it**
 
-            ### Here are some examples:
-            **Example 1 (Correct Usage)**  
-            **Question:** Who directed the movie La Dolce Vita?  
-            **Context:** La Dolce Vita is a 1960 Italian film directed by Federico Fellini.  
-            **Final Answer:** [START]Federico Fellini[END]  
+### Here are some examples:
+**Example 1 (Correct Usage)**
+**Question:** Who directed the movie La Dolce Vita?
+**Context:** La Dolce Vita is a 1960 Italian film directed by Federico Fellini.
+**Final Answer:** [START]Federico Fellini[END]
 
-            **Example 2 (Correct Usage)**  
-            **Question:** What was Diana Ross's first solo No. 1?  
-            **Context:** Diana Ross released her debut solo album in 1970, which contained "Ain’t No Mountain High Enough," her first solo No. 1 hit.  
-            **Final Answer:** [START]Ain't No Mountain High Enough[END]  
+**Example 2 (Correct Usage)**
+**Question:** What was Diana Ross's first solo No. 1?
+**Context:** Diana Ross released her debut solo album in 1970, which contained "Ain’t No Mountain High Enough," her first solo No. 1 hit.
+**Final Answer:** [START]Ain't No Mountain High Enough[END]
 
-            **Example 3 (Correct Usage)**  
-            **Question:** Tony Lumpkin, Constance Neville, and George Hastings are all characters in which play?  
-            **Context:** She Stoops to Conquer is a play by Oliver Goldsmith that includes Tony Lumpkin, Constance Neville, and George Hastings.  
-            **Final Answer:** [START]She Stoops to Conquer[END]  
+**Example 3 (Correct Usage)**
+**Question:** Tony Lumpkin, Constance Neville, and George Hastings are all characters in which play?
+**Context:** She Stoops to Conquer is a play by Oliver Goldsmith that includes Tony Lumpkin, Constance Neville, and George Hastings.
+**Final Answer:** [START]She Stoops to Conquer[END]
 
-            **Example 4 (Incorrect Context Example - No Answer in Context)**  
-            **Question:** What is the capital of Spain?  
-            **Context:** Madrid is known for its rich history and culture, but no explicit mention is made about it being the capital.  
-            **Final Answer:** [START]Not in context[END]  
+**Example 4 (Incorrect Context Example - No Answer in Context)**
+**Question:** What is the capital of Spain?
+**Context:** Madrid is known for its rich history and culture, but no explicit mention is made about it being the capital.
+**Final Answer:** [START]Madrid[END]
 
-            ---
+---
 
-            ### Now answer the following question using the given context only.
-            - **Only use one expression, not a full sentence.**  
-            - **If the answer is not found, return 'Not in context'.**  
-            - **Surround the answer with [START] and [END] to clearly mark it.**
+### Now answer the following question using the given context only.
+- **Only use one expression, not a full sentence.**
+- **Surround the answer with [START] and [END] to clearly mark it.**
 
-            **Question:** {question}  
-            **Context:** {contexts}  
+**Question:** {question}
+**Context:** {contexts}
 
-            Final Answer: [START]
-            <|start_header_id|>assistant<|end_header_id|>
+Final Answer: [START]
+<|start_header_id|>assistant<|end_header_id|>
 
-            """
+"""
         return message
 
     def generate_answer(self, message):
