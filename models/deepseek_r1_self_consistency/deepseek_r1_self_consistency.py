@@ -135,44 +135,69 @@ class deepseek_r1_self_consistency:
         return majority_indices[most_representative_idx]
 
     def create_message(self, question, contexts):
+        system_prompt = """
+        You are an AI assistant that follows a structured chain of thought.
+        - DO NOT use "<think>" or reflect on your process.
+        - Answer with EXACTLY 4 reasoning steps.
+        - Each reasoning step MUST be a bullet point (10 words max).
+        - Mark your final answer with "Final Answer: ".
+        - The final answer must be ONE concise expression (not a sentence).
+        - STOP RESPONDING once the final answer is given.
+        """
+
         constraints = """
-                     ONLY USE A MAXIMUM OF 4 REASONING STEPS! 
-                     ONLY WRITE ONE SENTENCE PER REASONING STEP! 
-                     MARK YOUR FINAL ANSWER WITH "Final Answer: "! 
-                     YOUR FINAL ANSWER SHOULD BE A SINGLE EXPRESSION, NOT A SENTENCE!"""
+        STRICT RULES:
+        - DO NOT use "<think>" before answering.
+        - Use EXACTLY 4 reasoning steps—no more, no less.
+        - Each reasoning step must be MAXIMUM 10 words.
+        - NO self-reflection, process description, or over-explanation.
+        - STOP RESPONDING after providing the final answer.
+        """
 
         examples = """First Example:
-         Question: Who directed the movie La Dolce Vita?
-         Context: La Dolce Vita is a 1960 Italian film directed by Federico Fellini. The film won the Palme d'Or and remains one of the most influential films in history.
-         Response:
-             1. The question asks for the director of La Dolce Vita.
-             2. The context states that Federico Fellini directed the movie.
-             3. No other director is mentioned.
-             4. Since Fellini is the only mentioned director, he is the correct answer.
-         Final Answer: Federico Fellini
+            **Question:** Who directed the movie La Dolce Vita?
+            **Context:** La Dolce Vita is a 1960 Italian film directed by Federico Fellini.
+            **Response:**
+                1. The question asks for the director of La Dolce Vita.
+                2. The context states Federico Fellini directed the movie.
+                3. No other director is mentioned.
+                4. Federico Fellini is confirmed as the director.
+            Final Answer: [START]Federico Fellini[END]
 
-         Second Example:
-         Question: What was Diana Ross's first solo No. 1?
-         Context: Diana Ross released her debut solo album in 1970, which contained "Ain’t No Mountain High Enough," her first solo No. 1 hit.
-         Response:
-             1. The question asks for Diana Ross's first solo No. 1.
-             2. The context confirms that "Ain’t No Mountain High Enough" was her first solo No. 1.
-             3. No earlier solo No. 1 hits are mentioned.
-             4. Since this matches the requirement, it is the correct answer.
-         Final Answer: Ain't No Mountain High Enough."""
+        Second Example:
+            **Question:** What was Diana Ross's first solo No. 1?
+            **Context:** Diana Ross released her debut solo album in 1970, which contained "Ain’t No Mountain High Enough," her first solo No. 1 hit.
+            **Response:**
+                1. The question asks for Diana Ross's first solo No. 1.
+                2. The context confirms "Ain’t No Mountain High Enough" was her first.
+                3. No earlier solo No. 1 hits are mentioned.
+                4. This matches the requirement for the correct answer.
+            Final Answer: [START]Ain't No Mountain High Enough[END]
 
-        # Optimized Prompt Template
+        Third Example:
+            **Question:** What is the capital of Spain?
+            **Context:** Madrid is mentioned but not confirmed as the capital.
+            **Response:**
+                1. The question asks for Spain’s capital.
+                2. The context does not confirm it.
+                3. Prior knowledge confirms Madrid is the capital.
+                4. Madrid is the correct answer.
+            Final Answer: [START]Madrid[END]
+        """
+
+        # Message-based prompt structure
         messages = [
-            {"role": "system",
-             "content": "You are an AI assistant that solves problems step by step using the provided context."},
+            {"role": "system", "content": system_prompt},
             {"role": "user",
-             "content": "Answer the question based on the context by pointing out each reasoning step."},
+             "content": "Answer the question based on the given context ONLY. If context is missing, use prior knowledge. DO NOT provide explanations beyond the reasoning steps."},
             {"role": "user", "content": constraints},
-            {"role": "user", "content": f"Here are some examples:\n\n{examples}"},
-            {"role": "user", "content": "Now answer the following question:"},
-            {"role": "user", "content": f"Question: {question}"},
-            {"role": "user", "content": f"Context: {contexts}"}
+            {"role": "user", "content": f"Here are examples of correct responses:\n\n{examples}"},
+            {"role": "user", "content": "Now answer the following question in the same format:"},
+            {"role": "user", "content": "**Question:** {question}"},
+            {"role": "user", "content": "**Context:** {context}"},
+            {"role": "user", "content": "**Response:**\n-"}  # Forces bullet-point start
         ]
+
         return messages
 
     def generate_answer(self, messages):
