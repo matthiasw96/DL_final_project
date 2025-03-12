@@ -145,8 +145,8 @@ class deepseek_r1_chain_of_thoughts:
             {"role": "user", "content": constraints},
             {"role": "user", "content": f"Here are examples of correct responses:\n\n{examples}"},
             {"role": "user", "content": "Now answer the following question in the same format:"},
-            {"role": "user", "content": "**Question:** {question}"},
-            {"role": "user", "content": "**Context:** {context}"},
+            {"role": "user", "content": f"**Question:** {question}"},
+            {"role": "user", "content": f"**Context:** {contexts}"},
             {"role": "user", "content": "**Response:**\n-"}  # Forces bullet-point start
         ]
 
