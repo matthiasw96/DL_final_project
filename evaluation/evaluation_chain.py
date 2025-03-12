@@ -30,6 +30,8 @@ def get_answers(directory, questions, model):
     for i in tqdm(range(len(questions)), desc="Retrieving Answers"):
         question = questions[i]
         answers[question[0]] = model.invoke(question[1])
+        i=i+1
+        print(f"Question{i}")
     write_data(directory + "/predictions.json", answers)
 
 def load_questions(path, split):
