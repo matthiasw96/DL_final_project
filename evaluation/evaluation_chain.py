@@ -24,14 +24,21 @@ def evaluate_triviaqa(dataset_file, prediction_file):
   )
   return result.stdout
 
-def get_answers(directory, questions, model):
+def get_answers(directory, questions, model, batch_size):
     answers = {}
 
-    for i in tqdm(range(len(questions)), desc="Retrieving Answers"):
-        question = questions[i]
-        answers[question[0]] = model.invoke(question[1])
-        i=i+1
-        print(f"Question: {i}")
+    for i in tqdm(range(0, len(questions), batch_size), desc="Retrieving Answers"):
+        batch = questions[i:i+batch_size]
+
+        batch_ids =[q[0] for q in batch]
+        batch_questions = [q[1] for q in batch]
+
+        batch_answers = model.invoke(batch_questions)
+
+        for q_id, answer in zip(batch_ids, batch_answers):
+            answers[q_id] = answer
+
+        print(f"process batch {i//batch_size +1} ({len(batch_answers)} questions)")
     write_data(directory + "/predictions.json", answers)
 
 def load_questions(path, split):
@@ -71,6 +78,7 @@ def get_args():
     parser.add_argument('--model_name', help='Name of the model')
     parser.add_argument('--model_params', nargs='+', help='Parameters of the model')
     parser.add_argument('--split_size', help='Size of the split')
+    parser.add_argument('--batch_size', help='Batch size')
     args = parser.parse_args()
     return args
 
@@ -84,6 +92,11 @@ if __name__ == "__main__":
     else:
         split_size = 7993
 
+    if args.batch_size is not None:
+        batch_size = int(args.batch_size)
+    else:
+        batch_size = 1
+
     model_name = args.model_name
 
     model_params = args.model_params
@@ -94,7 +107,7 @@ if __name__ == "__main__":
     model = load_model(model_path, model_name, model_params)
     print("Model initiated")
     print("Starting QA...")
-    get_answers(directory, questions, model)
+    get_answers(directory, questions, model, batch_size)
     print("QA complete")
     print("Starting evaluation...")
     results = evaluate_triviaqa(directory + "/evaluation_dataset.json", directory + "/predictions.json")

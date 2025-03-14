@@ -16,7 +16,10 @@ class deepseek_r1_chain_of_thoughts:
 
         self.model_name = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model = self.initialize_model(model_name=self.model_name)
+        self.model.config.use_cache = True
+        self.tokenizer.padding_side = "left"
 
         self.text_splitter = self.create_text_splitter()
 
@@ -25,12 +28,13 @@ class deepseek_r1_chain_of_thoughts:
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
+            bnb_4bit_compute_dtype=torch.float16
         )
 
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             quantization_config=quantization_config,
+            use_flash_attention_2=True,
             device_map="auto"
         )
         return model
@@ -43,9 +47,13 @@ class deepseek_r1_chain_of_thoughts:
         )
         return text_splitter
 
-    def invoke(self, question):
-        context = self.get_context(question)
-        return self.get_answer(question, context)
+    def invoke(self, questions):
+        contexts = [self.get_context(q) for q in questions]
+
+        messages_batch = [self.create_messages(q, c) for q, c in zip(questions, contexts)]
+        raw_outputs = self.generate_answer(messages_batch)
+
+        return [self.extract_answer(o) for o in raw_outputs]
 
     def get_context(self, question):
         articles = self.database.similarity_search(question, self.k_articles)
@@ -80,11 +88,6 @@ class deepseek_r1_chain_of_thoughts:
         top_chunks = lib.similarity_search(question, self.k_chunks)
         return top_chunks
 
-    def get_answer(self, question, context):
-        messages = self.create_messages(question, context)
-        raw_output = self.generate_answer(messages)
-        answer = self.extract_answer(raw_output)
-        return answer
 
     def create_messages(self, question, contexts):
         system_prompt = """
@@ -147,28 +150,36 @@ class deepseek_r1_chain_of_thoughts:
             {"role": "user", "content": "Now answer the following question in the same format:"},
             {"role": "user", "content": f"**Question:** {question}"},
             {"role": "user", "content": f"**Context:** {contexts}"},
-            {"role": "user", "content": "**Response:**\n-"}  # Forces bullet-point start
+            {"role": "user", "content": "**Response:**\n1."}  # Forces bullet-point start
         ]
 
         return messages
 
     def generate_answer(self, messages):
-        inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
+        inputs = self.tokenizer.apply_chat_template(
+            messages,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=4096,
+            add_generation_prompt=True
+        ).to(self.device)
 
         attention_mask = inputs.attention_mask if hasattr(inputs, "attention_mask") else None
 
         outputs = self.model.generate(
-            inputs,
+            inputs.input_ids,
             attention_mask=attention_mask,
-            max_new_tokens=800,  # Increase token limit for CoT reasoning
-            temperature=0.3,  # Slightly higher temperature for creativity in reasoning
-            top_p=0.9,  # Allow some diversity in reasoning steps
+            max_new_tokens=300,  # Increase token limit for CoT reasoning
+            temperature=0.2,  # Slightly higher temperature for creativity in reasoning
+            top_p=0.8,  # Allow some diversity in reasoning steps
             do_sample=True,  # Enable sampling for varied reasoning
-            pad_token_id=self.tokenizer.eos_token_id,
-            eos_token_id=self.tokenizer.eos_token_id
+            use_cache=True,
         )
-        answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return answer
+
+        torch.cuda.empty_cache()
+
+        return [self.tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
 
     def extract_answer(self, raw_output):
         answer = raw_output.split("Answer: ")[-1]
