@@ -168,7 +168,7 @@ class deepseek_r1_chain_of_thoughts:
         attention_mask = inputs.attention_mask if hasattr(inputs, "attention_mask") else None
 
         outputs = self.model.generate(
-            inputs.input_ids,
+            input_ids=inputs,
             attention_mask=attention_mask,
             max_new_tokens=300,  # Increase token limit for CoT reasoning
             temperature=0.2,  # Slightly higher temperature for creativity in reasoning
