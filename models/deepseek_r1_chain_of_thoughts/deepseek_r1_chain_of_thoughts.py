@@ -162,7 +162,7 @@ class deepseek_r1_chain_of_thoughts:
             padding=True,
             truncation=True,
             max_length=4096,
-            add_generation_prompt=True
+            add_generation_prompt=False
         ).to(self.device)
 
         attention_mask = inputs.attention_mask if hasattr(inputs, "attention_mask") else None
