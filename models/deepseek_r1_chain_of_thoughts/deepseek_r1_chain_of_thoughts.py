@@ -162,7 +162,7 @@ class deepseek_r1_chain_of_thoughts:
             padding=True,
             truncation=True,
             max_length=4096,
-            add_generation_prompt=False
+            add_generation_prompt=True
         ).to(self.device)
 
         attention_mask = inputs.attention_mask if hasattr(inputs, "attention_mask") else None
@@ -170,7 +170,7 @@ class deepseek_r1_chain_of_thoughts:
         outputs = self.model.generate(
             input_ids=inputs,
             attention_mask=attention_mask,
-            max_new_tokens=300,  # Increase token limit for CoT reasoning
+            max_new_tokens=1000,  # Increase token limit for CoT reasoning
             temperature=0.2,  # Slightly higher temperature for creativity in reasoning
             top_p=0.8,  # Allow some diversity in reasoning steps
             do_sample=True,  # Enable sampling for varied reasoning
