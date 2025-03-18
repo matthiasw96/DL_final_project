@@ -3,6 +3,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import torch
+import torch.nn.functional as F
 
 class deepseek_r1_chain_of_thoughts:
     def __init__(self, params):
@@ -88,16 +89,9 @@ class deepseek_r1_chain_of_thoughts:
         top_chunks = lib.similarity_search(question, self.k_chunks)
         return top_chunks
 
-
     def create_messages(self, question, contexts):
         system_prompt = """
         You are an AI assistant that follows a structured chain of thought.
-        - DO NOT use "<think>" or reflect on your process.
-        - Answer with EXACTLY 4 reasoning steps.
-        - Each reasoning step MUST be a bullet point (10 words max).
-        - Mark your final answer with "Final Answer: ".
-        - The final answer must be ONE concise expression (not a sentence).
-        - STOP RESPONDING once the final answer is given.
         """
 
         constraints = """
@@ -109,7 +103,7 @@ class deepseek_r1_chain_of_thoughts:
         - STOP RESPONDING after providing the final answer.
         """
 
-        examples = """First Example:
+        examples = """Example:
             **Question:** Who directed the movie La Dolce Vita?
             **Context:** La Dolce Vita is a 1960 Italian film directed by Federico Fellini.
             **Response:**
@@ -120,16 +114,6 @@ class deepseek_r1_chain_of_thoughts:
             Final Answer: [START]Federico Fellini[END]
 
         Second Example:
-            **Question:** What was Diana Ross's first solo No. 1?
-            **Context:** Diana Ross released her debut solo album in 1970, which contained "Ain’t No Mountain High Enough," her first solo No. 1 hit.
-            **Response:**
-                1. The question asks for Diana Ross's first solo No. 1.
-                2. The context confirms "Ain’t No Mountain High Enough" was her first.
-                3. No earlier solo No. 1 hits are mentioned.
-                4. This matches the requirement for the correct answer.
-            Final Answer: [START]Ain't No Mountain High Enough[END]
-
-        Third Example:
             **Question:** What is the capital of Spain?
             **Context:** Madrid is mentioned but not confirmed as the capital.
             **Response:**
@@ -143,38 +127,100 @@ class deepseek_r1_chain_of_thoughts:
         # Message-based prompt structure
         messages= [
             {"role": "system", "content": system_prompt},
-            {"role": "user",
-             "content": "Answer the question based on the given context ONLY. If context is missing, use prior knowledge. DO NOT provide explanations beyond the reasoning steps."},
-            {"role": "user", "content": constraints},
-            {"role": "user", "content": f"Here are examples of correct responses:\n\n{examples}"},
-            {"role": "user", "content": "Now answer the following question in the same format:"},
+            {"role": "user", "content": "Now answer the following question in **the same format as the examples**:"},
             {"role": "user", "content": f"**Question:** {question}"},
             {"role": "user", "content": f"**Context:** {contexts}"},
-            {"role": "user", "content": "**Response:**\n1."}  # Forces bullet-point start
+            {"role": "user", "content": constraints},
+            {"role": "user", "content": f"Here are examples of correct responses:\n\n{examples}"},
+            {"role": "user", "content": "**Begin Response Below:**\n\n1."}
         ]
 
         return messages
 
-    def generate_answer(self, messages):
+
+    def generate_answer(self, messages_batch):
+      torch.cuda.empty_cache()  # Free unused GPU memory before inference
+      torch.cuda.synchronize()  # Ensure memory is properly released
+
+      input_ids_list = []
+
+      # Encode each message separately and track max sequence length
+      max_length = 0
+
+      for messages in messages_batch:
+          encoded_input = self.tokenizer.apply_chat_template(
+              messages,
+              return_tensors="pt",
+              truncation=True,
+              max_length=8096,
+              padding_side='left'
+          )
+
+          # Ensure batch dimension exists
+          if encoded_input.dim() == 1:
+              encoded_input = encoded_input.unsqueeze(0)
+
+          input_ids_list.append(encoded_input)
+          max_length = max(max_length, encoded_input.shape[-1])  # Track longest sequence
+
+      # **Manually pad each tensor to max_length**
+      padded_input_ids = torch.stack([
+          F.pad(tensor.squeeze(0), (0, max_length - tensor.shape[-1]), value=self.tokenizer.pad_token_id)
+          for tensor in input_ids_list
+      ]).to(self.device)
+
+      # ✅ Ensure `attention_mask` is **2D** (batch_size, seq_length)
+      attention_mask = (padded_input_ids != self.tokenizer.pad_token_id).long().to(self.device)
+
+      # **Debugging Output**
+      print(f"input_ids shape: {padded_input_ids.shape}")  # Should be (batch_size, seq_length)
+      print(f"attention_mask shape: {attention_mask.shape}")  # Should be (batch_size, seq_length)
+
+      with torch.inference_mode():  # Optimize inference
+          outputs = self.model.generate(
+              input_ids=padded_input_ids,
+              attention_mask=attention_mask,  # ✅ Fixed to 2D
+              max_new_tokens=200,  # Reduce token limit for efficiency
+              repetition_penalty=1.2,  # Avoid repeating tokens
+              do_sample=False,  # Greedy decoding
+              use_cache=True,
+              eos_token_id=self.tokenizer.eos_token_id,
+              pad_token_id=self.tokenizer.pad_token_id,
+          )
+
+      torch.cuda.empty_cache()  # Free GPU memory after inference
+
+      return [self.tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
+
+
+
+
+
+
+    def generate_answers(self, messages):
+
         inputs = self.tokenizer.apply_chat_template(
             messages,
             return_tensors="pt",
-            padding=True,
+            padding="longest",
             truncation=True,
-            max_length=4096,
-            add_generation_prompt=True
+            max_length=8096,
+            return_attention_mask=True,
         ).to(self.device)
 
-        attention_mask = inputs.attention_mask if hasattr(inputs, "attention_mask") else None
+        attention_mask = inputs.ne(self.tokenizer.pad_token_id).int().to(self.device)
 
         outputs = self.model.generate(
             input_ids=inputs,
             attention_mask=attention_mask,
-            max_new_tokens=1000,  # Increase token limit for CoT reasoning
-            temperature=0.2,  # Slightly higher temperature for creativity in reasoning
-            top_p=0.8,  # Allow some diversity in reasoning steps
-            do_sample=True,  # Enable sampling for varied reasoning
+            max_new_tokens=200,  # Tight token budget
+            temperature=0.5,    # Nearly deterministic
+            top_p=0.85,
+            repetition_penalty=1.5,
+            do_sample=True,     # Greedy decoding
             use_cache=True,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
         )
 
         torch.cuda.empty_cache()
