@@ -2,11 +2,9 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.cluster import AgglomerativeClustering
-from collections import defaultdict
 import torch
+import torch.nn.functional as F
+from collections import Counter
 
 
 class deepseek_r1_self_consistency:
@@ -49,9 +47,11 @@ class deepseek_r1_self_consistency:
         )
         return text_splitter
 
-    def invoke(self, question):
-        context = self.get_context(question)
-        return self.get_answer(question, context)
+    def invoke(self, questions):
+        contexts = [self.get_context(q) for q in questions]
+
+        messages_batch = [self.create_messages(q, c) for q, c in zip(questions, contexts)]
+        return self.get_answer(messages_batch)
 
     def get_context(self, question):
         articles = self.database.similarity_search(question, self.k_articles)
@@ -86,63 +86,34 @@ class deepseek_r1_self_consistency:
         top_chunks = lib.similarity_search(question, self.k_chunks)
         return top_chunks
 
-    def get_answer(self, question, context):
-        message = self.create_message(question, context)
-        samples = self.sample_answers(message)
-        answer = self.select_answer(samples)
-        return answer
+    def get_answer(self, messages_batch):
+        samples = self.sample_answers(messages_batch)
+        answers = [self.select_consistent_answer(sample) for sample in samples]
+        return answers
 
-    def sample_answers(self, message):
+    def sample_answers(self, messages_batch):
         samples = []
         for _ in range(self.m):
-            r = self.generate_answer(message)
-            a = self.extract_answer(r)
-            samples.append(a)
+            responses = self.generate_answer(messages_batch)
+            answers = [self.extract_answer(response) for response in responses]
+            samples.append(answers)
+        samples = [sample for sample in zip(*samples)]
         return samples
 
-    def select_answer(self, samples):
-        answer_embeddings, cluster_groups, cluster_labels = self.cluster_answers(samples)
-        answer = self.majority_vote(answer_embeddings, cluster_groups, cluster_labels)
-        return samples[answer]
+    def select_consistent_answer(self, samples):
+        # Flatten samples if they are in tuple/list form
+        flattened_samples = [" ".join(sample) if isinstance(sample, (tuple, list)) else sample for sample in samples]
 
-    def cluster_answers(self, samples):
-        answer_embeddings = self.embedding_model.embed_documents(samples)
-        answer_embeddings = np.array(answer_embeddings)
+        # Count occurrences of each response
+        answer_counts = Counter(flattened_samples)
 
-        distance_matrix = 1 - cosine_similarity(answer_embeddings)
+        # Return the most common answer
+        most_common_answer, _ = answer_counts.most_common(1)[0]
+        return most_common_answer
 
-        clustering = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=0.3,
-            metric='precomputed',
-            linkage='average')
-
-        cluster_labels = clustering.fit_predict(distance_matrix)
-        cluster_groups = defaultdict(list)
-        for idx, label in enumerate(cluster_labels):
-            cluster_groups[label].append(samples[idx])
-        return answer_embeddings, cluster_groups, cluster_labels
-
-    def majority_vote(self, answer_embeddings, cluster_groups, cluster_labels):
-        majority_label = max(cluster_groups, key=lambda k: len(cluster_groups[k]))
-        majority_indices = [idx for idx, lbl in enumerate(cluster_labels) if lbl == majority_label]
-
-        majority_embeddings = answer_embeddings[majority_indices]
-        centroid = np.mean(majority_embeddings, axis=0)
-        similarities = cosine_similarity([centroid], majority_embeddings)[0]
-        most_representative_idx = np.argmax(similarities)
-
-        return majority_indices[most_representative_idx]
-
-    def create_message(self, question, contexts):
+    def create_messages(self, question, contexts):
         system_prompt = """
         You are an AI assistant that follows a structured chain of thought.
-        - DO NOT use "<think>" or reflect on your process.
-        - Answer with EXACTLY 4 reasoning steps.
-        - Each reasoning step MUST be a bullet point (10 words max).
-        - Mark your final answer with "Final Answer: ".
-        - The final answer must be ONE concise expression (not a sentence).
-        - STOP RESPONDING once the final answer is given.
         """
 
         constraints = """
@@ -154,7 +125,7 @@ class deepseek_r1_self_consistency:
         - STOP RESPONDING after providing the final answer.
         """
 
-        examples = """First Example:
+        examples = """Example:
             **Question:** Who directed the movie La Dolce Vita?
             **Context:** La Dolce Vita is a 1960 Italian film directed by Federico Fellini.
             **Response:**
@@ -165,16 +136,6 @@ class deepseek_r1_self_consistency:
             Final Answer: [START]Federico Fellini[END]
 
         Second Example:
-            **Question:** What was Diana Ross's first solo No. 1?
-            **Context:** Diana Ross released her debut solo album in 1970, which contained "Ain’t No Mountain High Enough," her first solo No. 1 hit.
-            **Response:**
-                1. The question asks for Diana Ross's first solo No. 1.
-                2. The context confirms "Ain’t No Mountain High Enough" was her first.
-                3. No earlier solo No. 1 hits are mentioned.
-                4. This matches the requirement for the correct answer.
-            Final Answer: [START]Ain't No Mountain High Enough[END]
-
-        Third Example:
             **Question:** What is the capital of Spain?
             **Context:** Madrid is mentioned but not confirmed as the capital.
             **Response:**
@@ -188,40 +149,85 @@ class deepseek_r1_self_consistency:
         # Message-based prompt structure
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user",
-             "content": "Answer the question based on the given context ONLY. If context is missing, use prior knowledge. DO NOT provide explanations beyond the reasoning steps."},
-            {"role": "user", "content": constraints},
-            {"role": "user", "content": f"Here are examples of correct responses:\n\n{examples}"},
-            {"role": "user", "content": "Now answer the following question in the same format:"},
+            {"role": "user", "content": "Now answer the following question in **the same format as the examples**:"},
             {"role": "user", "content": f"**Question:** {question}"},
             {"role": "user", "content": f"**Context:** {contexts}"},
-            {"role": "user", "content": "**Response:**\n-"}  # Forces bullet-point start
+            {"role": "user", "content": constraints},
+            {"role": "user", "content": f"Here are examples of correct responses:\n\n{examples}"},
+            {"role": "user", "content": "**Begin Response Below:**\n\n1."}
         ]
 
         return messages
 
-    def generate_answer(self, messages):
-        inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt").to(self.device)
+    def generate_answer(self, messages_batch):
+        torch.cuda.empty_cache()  # Free unused GPU memory before inference
+        torch.cuda.synchronize()  # Ensure memory is properly released
 
-        attention_mask = inputs.attention_mask if hasattr(inputs, "attention_mask") else None
+        input_ids_list = []
 
-        outputs = self.model.generate(
-            inputs,
-            attention_mask=attention_mask,
-            max_new_tokens=800,  # Increase token limit for CoT reasoning
-            temperature=0.3,  # Slightly higher temperature for creativity in reasoning
-            top_p=0.9,  # Allow some diversity in reasoning steps
-            do_sample=True,  # Enable sampling for varied reasoning
-            pad_token_id=self.tokenizer.eos_token_id,
-            eos_token_id=self.tokenizer.eos_token_id
-        )
-        answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return answer
+        # Encode each message separately and track max sequence length
+        max_length = 0
+
+        for messages in messages_batch:
+            encoded_input = self.tokenizer.apply_chat_template(
+                messages,
+                return_tensors="pt",
+                truncation=True,
+                max_length=8096,
+                padding_side='left'
+            )
+
+            # Ensure batch dimension exists
+            if encoded_input.dim() == 1:
+                encoded_input = encoded_input.unsqueeze(0)
+
+            input_ids_list.append(encoded_input)
+            max_length = max(max_length, encoded_input.shape[-1])  # Track longest sequence
+
+        # **Manually pad each tensor to max_length**
+        padded_input_ids = torch.stack([
+            F.pad(tensor.squeeze(0), (0, max_length - tensor.shape[-1]), value=self.tokenizer.pad_token_id)
+            for tensor in input_ids_list
+        ]).to(self.device)
+
+        # ✅ Ensure `attention_mask` is **2D** (batch_size, seq_length)
+        attention_mask = (padded_input_ids != self.tokenizer.pad_token_id).long().to(self.device)
+
+        # **Debugging Output**
+        print(f"input_ids shape: {padded_input_ids.shape}")  # Should be (batch_size, seq_length)
+        print(f"attention_mask shape: {attention_mask.shape}")  # Should be (batch_size, seq_length)
+
+        with torch.inference_mode():  # Optimize inference
+            outputs = self.model.generate(
+                input_ids=padded_input_ids,
+                attention_mask=attention_mask,  # ✅ Fixed to 2D
+                max_new_tokens=200,  # Reduce token limit for efficiency
+                repetition_penalty=1.2,
+                temperature=0.3,  # Slightly higher temperature for creativity in reasoning
+                top_p=0.9,  # Allow some diversity in reasoning steps
+                do_sample=True,  # Enable sampling for varied reasoning
+                use_cache=True,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
+            )
+
+        torch.cuda.empty_cache()  # Free GPU memory after inference
+
+        return [self.tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
 
     def extract_answer(self, raw_output):
-        answer = raw_output.split("Answer:")[-1]
-        if answer.startswith(" "):
-            answer = answer.replace(" ", "", 1).strip()
-        elif "." in answer:
-            answer = answer.replace(".","", 1).stript()
-        return answer
+        answer = raw_output.split("Answer: ")[-1]
+        last_start = answer.rfind("[START]")  # Find last occurrence of [START]
+
+        if last_start == -1:
+            return "Extraction Failed: No [START] marker found."
+
+        last_end = answer.find("[END]", last_start)  # Find first [END] after last [START]
+
+        if last_end == -1:
+            return "Extraction Failed: No closing [END] found after last [START]."
+
+        # Extract answer
+        answer = answer[last_start + len("[START]"):last_end].strip()
+
+        return answer if answer else "Extraction Failed: Empty answer."

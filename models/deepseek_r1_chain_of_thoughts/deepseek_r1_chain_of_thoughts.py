@@ -192,41 +192,6 @@ class deepseek_r1_chain_of_thoughts:
 
       return [self.tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
 
-
-
-
-
-
-    def generate_answers(self, messages):
-
-        inputs = self.tokenizer.apply_chat_template(
-            messages,
-            return_tensors="pt",
-            padding="longest",
-            truncation=True,
-            max_length=8096,
-            return_attention_mask=True,
-        ).to(self.device)
-
-        attention_mask = inputs.ne(self.tokenizer.pad_token_id).int().to(self.device)
-
-        outputs = self.model.generate(
-            input_ids=inputs,
-            attention_mask=attention_mask,
-            max_new_tokens=200,  # Tight token budget
-            temperature=0.5,    # Nearly deterministic
-            top_p=0.85,
-            repetition_penalty=1.5,
-            do_sample=True,     # Greedy decoding
-            use_cache=True,
-            eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=self.tokenizer.pad_token_id,
-        )
-
-        torch.cuda.empty_cache()
-
-        return [self.tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
-
     def extract_answer(self, raw_output):
         answer = raw_output.split("Answer: ")[-1]
         last_start = answer.rfind("[START]")  # Find last occurrence of [START]
